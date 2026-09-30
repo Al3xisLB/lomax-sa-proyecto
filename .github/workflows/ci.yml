@@ -37,12 +37,37 @@ jobs:
       - name: Instalar Dependencias
         run: npm install
 
-      - name: Esperar a que PostgreSQL esté listo
+      - name: Esperar a que PostgreSQL esté listo y crear tablas
+        env:
+          PGPASSWORD: postgres
         run: |
           until pg_isready -h localhost -p 5432 -U postgres; do
             echo "Esperando a la base de datos..."
             sleep 2
           done
+          
+          # Crear tablas y datos mínimos de prueba en PostgreSQL de GitHub Actions
+          psql -h localhost -U postgres -d lomax_db -c "
+            CREATE TABLE IF NOT EXISTS categorias (
+              categoria_id SERIAL PRIMARY KEY,
+              nombre VARCHAR(100) NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS productos (
+              producto_id SERIAL PRIMARY KEY,
+              codigo VARCHAR(50) UNIQUE NOT NULL,
+              nombre VARCHAR(150) NOT NULL,
+              descripcion TEXT,
+              precio NUMERIC(10,2) NOT NULL,
+              categoria_id INT REFERENCES categorias(categoria_id),
+              estado VARCHAR(50) DEFAULT 'APROBADO'
+            );
+
+            INSERT INTO categorias (nombre) VALUES ('Tecnología'), ('Hogar') ON CONFLICT DO NOTHING;
+            INSERT INTO productos (codigo, nombre, descripcion, precio, categoria_id, estado) 
+            VALUES ('PROD-01', 'Laptop Test', 'Laptop de prueba', 999.99, 1, 'APROBADO')
+            ON CONFLICT (codigo) DO NOTHING;
+          "
 
       - name: Ejecutar Pruebas Automatizadas (Jest)
         env:
