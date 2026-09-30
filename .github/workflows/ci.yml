@@ -37,6 +37,13 @@ jobs:
       - name: Instalar Dependencias
         run: npm install
 
+      - name: Esperar a que PostgreSQL esté listo
+        run: |
+          until pg_isready -h localhost -p 5432 -U postgres; do
+            echo "Esperando a la base de datos..."
+            sleep 2
+          done
+
       - name: Ejecutar Pruebas Automatizadas (Jest)
         env:
           DB_HOST: localhost
