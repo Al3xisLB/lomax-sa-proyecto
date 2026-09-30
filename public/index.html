@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Lomax S.A. - Panel de Gestión y Catálogo E5/P6</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 p-6">
+    <div class="max-w-5xl mx-auto bg-white p-8 rounded-lg shadow-md">
+        <h1 class="text-3xl font-bold mb-2 text-gray-800">🚀 Lomax S.A. - Panel de Gestión E5 / P6</h1>
+        <p class="text-gray-600 mb-6">Sistema integrado con RDS (PostgreSQL), S3 y DynamoDB.</p>
+        
+        <!-- Alertas de Error / Éxito -->
+        <div id="alert-box" class="hidden mb-4 p-4 rounded text-white font-semibold"></div>
+
+        <!-- Sección Categorías -->
+        <div class="mb-8">
+            <h2 class="text-xl font-semibold mb-3 text-gray-700">Categorías Disponibles</h2>
+            <div id="categorias-list" class="flex gap-2 flex-wrap"></div>
+        </div>
+
+        <!-- Formulario Registrar Producto -->
+        <div class="mb-8 bg-gray-50 p-6 rounded border shadow-sm">
+            <h2 class="text-xl font-semibold mb-3 text-gray-700">Registrar Nuevo Producto (con Miniatura S3)</h2>
+            <form id="product-form" class="grid grid-cols-2 gap-4">
+                <input type="text" id="codigo" placeholder="Código (ej. PROD-21)" required class="border p-2 rounded">
+                <input type="text" id="nombre" placeholder="Nombre del producto" required class="border p-2 rounded">
+                <input type="number" step="0.01" id="precio" placeholder="Precio ($)" required class="border p-2 rounded">
+                <select id="categoria_id" class="border p-2 rounded bg-white" required></select>
+                <div class="col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Miniatura del Producto (S3 Upload / Probar archivo inválido ej. .txt):</label>
+                    <input type="file" id="miniatura" class="border p-2 rounded w-full bg-white" required>
+                </div>
+                <textarea id="descripcion" placeholder="Descripción del producto..." class="col-span-2 border p-2 rounded"></textarea>
+                <button type="submit" class="col-span-2 bg-blue-600 text-white p-3 rounded hover:bg-blue-700 font-semibold shadow">Guardar y Publicar Producto</button>
+            </form>
+        </div>
+
+        <!-- Tabla Productos -->
+        <div>
+            <h2 class="text-xl font-semibold mb-3 text-gray-700">Catálogo de Productos Publicados (20+ Registros)</h2>
+            <div class="overflow-x-auto max-h-96 overflow-y-auto">
+                <table class="w-full border-collapse border border-gray-300">
+                    <thead>
+                        <tr class="bg-gray-200 text-gray-700 sticky top-0">
+                            <th class="border p-2">ID</th>
+                            <th class="border p-2">Código</th>
+                            <th class="border p-2">Nombre</th>
+                            <th class="border p-2">Precio</th>
+                            <th class="border p-2">Estado</th>
+                            <th class="border p-2">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productos-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Detalle -->
+    <div id="detail-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white p-6 rounded-lg max-w-lg w-full shadow-xl">
+            <h3 class="text-2xl font-bold mb-4 text-gray-800">📋 Detalle del Producto</h3>
+            <div id="modal-content" class="space-y-2 text-gray-700 mb-6"></div>
+            <button onclick="closeModal()" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 w-full font-semibold">Cerrar</button>
+        </div>
+    </div>
+
+    <script>
+        const alertBox = document.getElementById('alert-box');
+
+        function showAlert(message, isError = true) {
+            alertBox.textContent = message;
+            alertBox.className = `mb-4 p-4 rounded text-white font-semibold ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+            alertBox.classList.remove('hidden');
+            setTimeout(() => alertBox.classList.add('hidden'), 5000);
+        }
+
+        async function loadData() {
+            try {
+                const resCat = await fetch('/categorias');
+                const categorias = await resCat.json();
+                const catList = document.getElementById('categorias-list');
+                const catSelect = document.getElementById('categoria_id');
+                catList.innerHTML = '';
+                catSelect.innerHTML = '<option value="">Seleccione Categoría</option>';
+                
+                categorias.forEach(c => {
+                    catList.innerHTML += `<span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">${c.nombre} (ID: ${c.categoria_id})</span>`;
+                    catSelect.innerHTML += `<option value="${c.categoria_id}">${c.nombre}</option>`;
+                });
+
+                const resProd = await fetch('/productos');
+                const productos = await resProd.json();
+                const prodTable = document.getElementById('productos-table');
+                prodTable.innerHTML = '';
+                
+                if(productos.length === 0) {
+                    prodTable.innerHTML = `<tr><td colspan="6" class="text-center p-4 text-gray-500">No hay productos registrados aún.</td></tr>`;
+                    return;
+                }
+
+                productos.forEach(p => {
+                    prodTable.innerHTML += `
+                        <tr class="hover:bg-gray-50">
+                            <td class="border p-2 text-center font-bold">#${p.producto_id}</td>
+                            <td class="border p-2 font-mono">${p.codigo}</td>
+                            <td class="border p-2">${p.nombre}</td>
+                            <td class="border p-2 text-right">$${parseFloat(p.precio).toFixed(2)}</td>
+                            <td class="border p-2 text-center"><span class="bg-green-100 text-green-800 px-2 py-0.5 rounded text-xs font-semibold">${p.estado}</span></td>
+                            <td class="border p-2 text-center">
+                                <button onclick='showDetail(${JSON.stringify(p)})' class="bg-indigo-600 text-white px-3 py-1 rounded text-xs hover:bg-indigo-700 font-semibold">Ver Detalle</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            } catch (err) {
+                console.error("Error cargando datos:", err);
+            }
+        }
+
+        function showDetail(p) {
+            const content = document.getElementById('modal-content');
+            content.innerHTML = `
+                <p><strong>ID de Producto:</strong> #${p.producto_id}</p>
+                <p><strong>Código Único:</strong> ${p.codigo}</p>
+                <p><strong>Nombre:</strong> ${p.nombre}</p>
+                <p><strong>Descripción:</strong> ${p.descripcion || 'Sin descripción'}</p>
+                <p><strong>Precio:</strong> $${parseFloat(p.precio).toFixed(2)}</p>
+                <p><strong>Estado:</strong> ${p.estado}</p>
+                <hr class="my-2">
+                <p class="text-xs text-green-600 font-semibold">✔ Confirmado en RDS (PostgreSQL)</p>
+                <p class="text-xs text-blue-600 font-semibold">✔ Sincronizado en DynamoDB</p>
+                <p class="text-xs text-purple-600 font-semibold">✔ Miniatura almacenada en S3</p>
+            `;
+            document.getElementById('detail-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('detail-modal').classList.add('hidden');
+        }
+
+        document.getElementById('product-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('miniatura');
+            const file = fileInput.files[0];
+
+            // Validar archivo inválido en el cliente también
+            if (file && !file.type.startsWith('image/')) {
+                showAlert('Error: Archivo inválido. Sube una imagen válida (PNG, JPG). El producto no fue registrado.');
+                return;
+            }
+
+            const data = {
+                codigo: document.getElementById('codigo').value,
+                nombre: document.getElementById('nombre').value,
+                precio: parseFloat(document.getElementById('precio').value),
+                categoria_id: parseInt(document.getElementById('categoria_id').value),
+                descripcion: document.getElementById('descripcion').value,
+                fileName: file ? file.name : 'default.png',
+                fileType: file ? file.type : 'image/png'
+            };
+
+            try {
+                const res = await fetch('/productos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const resData = await res.json();
+
+                if(res.ok) {
+                    showAlert(`¡Producto #${resData.producto_id} registrado con éxito y sincronizado en S3/DynamoDB!`, false);
+                    document.getElementById('product-form').reset();
+                    loadData();
+                } else {
+                    showAlert('Error al registrar: ' + (resData.error || 'Desconocido'));
+                }
+            } catch (err) {
+                showAlert('Error de conexión con el servidor.');
+            }
+        });
+
+        loadData();
+    </script>
+</body>
+</html>
